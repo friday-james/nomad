@@ -1,4 +1,4 @@
-package framework
+package provisioning
 
 import (
 	"fmt"
@@ -10,36 +10,25 @@ import (
 	vapi "github.com/hashicorp/vault/api"
 )
 
-// ProvisionerOptions defines options to be given to the Provisioner when calling
-// ProvisionCluster
-type ProvisionerOptions struct {
-	Name         string
-	ExpectConsul bool // If true, fails if a Consul client can't be configured
-	ExpectVault  bool // If true, fails if a Vault client can't be configured
-}
-
-type ClusterInfo struct {
-	ID           string
-	Name         string
-	NomadClient  *napi.Client
-	ConsulClient *capi.Client
-	VaultClient  *vapi.Client
-}
-
-// Provisioner interface is used by the test framework to provision a Nomad
-// cluster for each TestCase
-type Provisioner interface {
-	ProvisionCluster(opts ProvisionerOptions) (*ClusterInfo, error)
-	DestroyCluster(clusterID string) error
-}
-
 // DefaultProvisioner is a noop provisioner that builds clients from environment
 // variables according to the respective client configuration
 var DefaultProvisioner Provisioner = new(singleClusterProvisioner)
 
 type singleClusterProvisioner struct{}
 
-func (p *singleClusterProvisioner) ProvisionCluster(opts ProvisionerOptions) (*ClusterInfo, error) {
+// SetupTestRun in the default case is a no-op.
+func (p *singleClusterProvisioner) SetupTestRun(opts SetupOptions) (*ClusterInfo, error) {
+	return &ClusterInfo{}, nil
+}
+
+// SetupTestSuite in the default case is a no-op.
+func (p *singleClusterProvisioner) SetupTestSuite(opts SetupOptions) (*ClusterInfo, error) {
+	return &ClusterInfo{}, nil
+}
+
+// SetupTestCase in the default case only creates new clients and embeds the
+// TestCase name into the ClusterInfo handle.
+func (p *singleClusterProvisioner) SetupTestCase(opts SetupOptions) (*ClusterInfo, error) {
 	// Build ID based off given name
 	info := &ClusterInfo{
 		ID:   uuid.Generate()[:8],
@@ -55,8 +44,8 @@ func (p *singleClusterProvisioner) ProvisionCluster(opts ProvisionerOptions) (*C
 
 	if opts.ExpectConsul {
 		consulClient, err := capi.NewClient(capi.DefaultConfig())
-		if err != nil && opts.ExpectConsul {
-			return nil, err
+		if err != nil {
+			return nil, fmt.Errorf("expected Consul: %v", err)
 		}
 		info.ConsulClient = consulClient
 	}
@@ -75,7 +64,8 @@ func (p *singleClusterProvisioner) ProvisionCluster(opts ProvisionerOptions) (*C
 	return info, err
 }
 
-func (p *singleClusterProvisioner) DestroyCluster(_ string) error {
-	//Maybe try to GC things based on id?
-	return nil
-}
+// all TearDown* methods of the default provisioner leave the test environment in place
+
+func (p *singleClusterProvisioner) TearDownTestCase(_ string) error  { return nil }
+func (p *singleClusterProvisioner) TearDownTestSuite(_ string) error { return nil }
+func (p *singleClusterProvisioner) TearDownTestRun(_ string) error   { return nil }
